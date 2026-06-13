@@ -7,6 +7,27 @@ pub fn List(comptime T: type) type {
     return std.ArrayList(T);
 }
 
+const Randshit = struct {
+    nums: List(u8),
+
+    fn init(arena: *ArenaAllocator) !*Randshit {
+        const allocator = arena.allocator();
+        const randptr = try allocator.create(Randshit);
+
+        var numms = try List(u8).initCapacity(allocator, 3);
+        try numms.append(allocator, 1);
+        try numms.append(allocator, 2);
+        try numms.append(allocator, 3);
+
+        const randshid = Randshit {
+            .nums = numms,
+        };
+
+        randptr.* = randshid;
+        return randptr;
+    }
+};
+
 const RandomAssStruct = struct {
     name: []const u8
 };
@@ -14,7 +35,7 @@ var shared = RandomAssStruct{
     .name = "Mads!"
 };
 
-fn testttt() error{}!*RandomAssStruct {
+fn testttt() !*RandomAssStruct {
     std.log.debug("TEST!!!!!", .{});
     return &shared;
 }
@@ -98,8 +119,11 @@ const Container = struct {
                     args[i] = val;
                 }
 
+                // @compileLog("some test here: {s}", @typeName(ReturnType));
                 const v: ReturnType = @call(.auto, func, args);
-                const val = try v catch {
+                // @compileLog("some valu here: {s}", @typeName(@TypeOf(v)));
+
+                const val = v catch {
                     return error.ConstructionError;
                 };
                 ctx.value = val;
@@ -107,7 +131,7 @@ const Container = struct {
         };
 
         const ctx = Context{
-            .return_type_name = @typeName(ReturnType),
+            .return_type_name = @typeName(Payload),
             .value = null,
             .callme = anon.callme,
         };
@@ -138,6 +162,10 @@ const Container = struct {
 
         std.log.debug("finding constructor for {s}", .{type_name});
         var context: Context = try stuff: for (self.contexts.items) |ctx| {
+            std.log.debug(
+                "checkign {s} == {s}",
+                .{type_name, ctx.return_type_name}
+            );
             if (!std.mem.eql(u8, ctx.return_type_name, type_name))
                 continue :stuff;
 
@@ -169,6 +197,7 @@ const Container = struct {
 pub fn main(init: std.process.Init) !void {
     var container = try Container.init(init.arena);
     try container.register(testttt);
+    try container.register(Randshit.init);
     const s1 = try container.resolve(RandomAssStruct);
     const s2 = try container.resolve(RandomAssStruct);
     const s3 = try container.resolve(RandomAssStruct);
@@ -179,7 +208,8 @@ pub fn main(init: std.process.Init) !void {
     std.log.debug("received: {*}", .{s3});
     std.log.debug("received: {*}", .{s4});
 
-    // const f: *anyopaque = @constCast(&testttt);
-    // const actual_fn: *const fn (s: []const u8) void = @ptrCast(@alignCast(f));
-    // @call(.auto, actual_fn, .{"mads"});
+    const rshid = try container.resolve(Randshit);
+    for (rshid.nums.items, 0..) |item, i| {
+        std.log.debug("item: {d}, i: {d}", .{item, i});
+    }
 }
