@@ -14,7 +14,7 @@ var shared = RandomAssStruct{
     .name = "Mads!"
 };
 
-fn testttt() *RandomAssStruct {
+fn testttt() error{}!*RandomAssStruct {
     std.log.debug("TEST!!!!!", .{});
     return &shared;
 }
@@ -27,7 +27,7 @@ const Container = struct {
         return_type_name: []const u8,
         value: ?*anyopaque,
         // fn(ctx: *Context, container: *Container) void {
-        callme: ?*const fn(*Context, *Container) void,
+        callme: ?*const fn(*Context, *Container) error{ConstructionError}!void,
     };
 
     pub fn register(self: *Container, comptime func: anytype) !void {
@@ -43,16 +43,24 @@ const Container = struct {
             @compileError("function return type must be a pointer to struct");
 
         const ReturnType = fn_info.@"fn".return_type.?;
-        const ret_type_info: std.lang.Type = @typeInfo(ReturnType);
+        const error_union_info: std.lang.Type = @typeInfo(ReturnType);
         if (ReturnType == void)
-            @compileError("function return type must be a pointer to struct");
+            @compileError("function return type must be an error union");
 
-        switch (ret_type_info) {
-            .pointer => {},
-            else => @compileError("function return type must be a pointer to struct"),
+        switch (error_union_info) {
+            .error_union => {},
+            else => @compileError("function return type must be an error union"),
         }
 
-        const PtrChildType = ret_type_info.pointer.child;
+        const Payload = error_union_info.error_union.payload;
+        const payload_info: std.lang.Type = @typeInfo(Payload);
+        
+        switch (payload_info) {
+            .pointer => {},
+            else => @compileError("payload must be pointer to struct"),
+        }
+
+        const PtrChildType = payload_info.pointer.child;
         const ptr_child_type_info: std.lang.Type = @typeInfo(PtrChildType);
 
         switch (ptr_child_type_info) {
@@ -81,20 +89,20 @@ const Container = struct {
 
         // runtime -----------------------------
         const anon = struct {
-            fn callme(ctx: *Context, container: *Container) void {
+            fn callme(ctx: *Context, container: *Container) error{ConstructionError}!void {
                 var args: std.meta.ArgsTuple(Fn) = undefined;
                 inline for (param_types, 0..) |ptype, i| {
                     const ptype_info: std.lang.Type = @typeInfo(ptype);
-                    const val: ptype = container
-                        .resolve(ptype_info.pointer.child) catch {
-                        std.log.err("error calling something", .{});
-                        return;
-                    };
+                    const val: ptype = try container
+                        .resolve(ptype_info.pointer.child);
                     args[i] = val;
                 }
 
                 const v: ReturnType = @call(.auto, func, args);
-                ctx.value = v;
+                const val = try v catch {
+                    return error.ConstructionError;
+                };
+                ctx.value = val;
             }
         };
 
@@ -142,17 +150,17 @@ const Container = struct {
                 return @ptrCast(@alignCast(ctx.value.?));
 
             break :stuff ctx;
-        } else error.NoConstructorFound;
+        } else error.ConstructionError;
 
         const f = context.callme;
 
         if (f == null)
-            return error.ErrorConstructorNull;
+            return error.ConstructionError;
 
-        f.?(&context, self);
+        try f.?(&context, self);
 
         if (context.value == null)
-            return error.ErrorCreatingObject;
+            return error.ConstructionError;
 
         return @ptrCast(@alignCast(context.value.?));
     }
