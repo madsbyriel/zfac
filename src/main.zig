@@ -7,4 +7,3 @@ pub fn main(_: std.process.Init) !void {
     std.log.debug("result: {d}", .{result});
     return;
 }
-
